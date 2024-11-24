@@ -48,7 +48,7 @@ function getRandomCharacter() {
   return {
     img: characterImages[idx].img,
     id: characterImages[idx].id,
-    x: width / 2,
+    x: Math.floor(width / 2 / 40) * 40 + 20,
     y: 0,
   };
 }
@@ -72,6 +72,12 @@ function checkCollision(a, b) {
   return distance < 40;
 }
 
+// グリッドにスナップ
+function snapToGrid(character) {
+  character.x = Math.round((character.x - 20) / 40) * 40 + 20; // x座標を40ピクセル単位にスナップ
+  character.y = Math.round(character.y / 40) * 40; // y座標を40ピクセル単位にスナップ
+}
+
 // 連鎖処理
 function handleChainReaction() {
   const toRemove = new Set();
@@ -79,16 +85,16 @@ function handleChainReaction() {
 
   // グリッド構造にキャラクターを登録
   characters.forEach(c => {
-    const gridX = Math.floor(c.x / 40);
+    const gridX = Math.floor((c.x - 20) / 40);
     const gridY = Math.floor(c.y / 40);
     grid[gridY][gridX] = c;
   });
 
   const directions = [
-    { dx: 1, dy: 0 },  // 横方向
-    { dx: 0, dy: 1 },  // 縦方向
-    { dx: 1, dy: 1 },  // 右下斜め
-    { dx: 1, dy: -1 }  // 右上斜め
+    { dx: 1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 1, dy: 1 },
+    { dx: 1, dy: -1 }
   ];
 
   function findMatches(x, y, dx, dy) {
@@ -133,25 +139,28 @@ function handleChainReaction() {
     score += toRemove.size;
     updateScore();
     recalculateCharacterPositions(grid);
-    handleChainReaction(); // 再帰的に連鎖処理
+    handleChainReaction();
   }
 }
 
 // キャラクターの再配置
 function recalculateCharacterPositions(grid) {
   for (let x = 0; x < grid[0].length; x++) {
-    let emptyRow = null;
+    const column = [];
     for (let y = grid.length - 1; y >= 0; y--) {
-      if (grid[y][x] === null) {
-        emptyRow = y;
-      } else if (emptyRow !== null) {
-        const character = grid[y][x];
-        character.y += (emptyRow - y) * 40;
-        grid[emptyRow][x] = character;
+      if (grid[y][x]) {
+        column.push(grid[y][x]);
         grid[y][x] = null;
-        emptyRow--;
       }
     }
+
+    let emptyRow = grid.length - 1;
+    column.forEach(character => {
+      character.y = emptyRow * 40;
+      character.x = x * 40 + 20;
+      grid[emptyRow][x] = character;
+      emptyRow--;
+    });
   }
 }
 
@@ -161,26 +170,19 @@ function gameLoop() {
 
   ctx.clearRect(0, 0, width, height);
 
-  // 次に落ちるキャラクターの描画
   drawCharacter({ x: width / 2, y: 30, img: nextCharacter.img });
 
-  // 現在のキャラクターの移動と描画
   currentCharacter.y += 2;
   drawCharacter(currentCharacter);
 
-  // キャラクターが地面または他のキャラクターに衝突した場合
   if (
     currentCharacter.y + 20 >= height ||
     characters.some(c => checkCollision(currentCharacter, c))
   ) {
-    // キャラクターの最終位置を調整し、リストに追加
-    currentCharacter.y = Math.min(currentCharacter.y, height - 20);
+    snapToGrid(currentCharacter);
     characters.push({ ...currentCharacter });
-
-    // 連鎖処理の実行
     handleChainReaction();
 
-    // ゲームオーバー判定
     if (characters.some(c => c.y <= 20)) {
       isGameOver = true;
       alert("ゲームオーバー");
@@ -188,15 +190,12 @@ function gameLoop() {
       return;
     }
 
-    // 次のキャラクターを現在のキャラクターに設定し、新しいキャラクターを生成
     currentCharacter = { ...nextCharacter };
     nextCharacter = getRandomCharacter();
   }
 
-  // 全てのキャラクターを描画
   characters.forEach(c => drawCharacter(c));
 
-  // 次のフレームをリクエスト
   requestAnimationFrame(gameLoop);
 }
 
@@ -211,9 +210,17 @@ function resetGame() {
 
 // 入力処理
 document.addEventListener("keydown", e => {
-  if (e.key === "ArrowLeft" && currentCharacter.x > 20) currentCharacter.x -= 20;
-  if (e.key === "ArrowRight" && currentCharacter.x < width - 20) currentCharacter.x += 20;
-  if (e.key === " ") currentCharacter.y += 10;
+  if (e.key === "ArrowLeft" && currentCharacter.x > 20) {
+    currentCharacter.x -= 40;
+    snapToGrid(currentCharacter);
+  }
+  if (e.key === "ArrowRight" && currentCharacter.x < width - 20) {
+    currentCharacter.x += 40;
+    snapToGrid(currentCharacter);
+  }
+  if (e.key === " ") {
+    currentCharacter.y += 10;
+  }
 });
 
 // ゲーム開始
@@ -223,8 +230,8 @@ function startGame() {
   isGameOver = false;
 
   nextCharacter = getRandomCharacter();
-  currentCharacter = { ...nextCharacter }; // 最初のキャラクターを設定
-  nextCharacter = getRandomCharacter();    // 次のキャラクターを生成
+  currentCharacter = { ...nextCharacter };
+  nextCharacter = getRandomCharacter();
   updateScore();
   gameLoop();
 }
