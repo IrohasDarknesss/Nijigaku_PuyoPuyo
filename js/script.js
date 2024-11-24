@@ -1,14 +1,22 @@
 // 初期設定
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
-const width = canvas.width;
-const height = canvas.height;
+const columns = 13; // 横マス数
+const rows = 20; // 縦マス数
+const tileSize = 40; // マスのサイズ（ピクセル単位）
+canvas.width = columns * tileSize;
+canvas.height = rows * tileSize;
 
 let score = 0;
 let nextCharacter;
 let currentCharacter;
-let characters = [];
+let grid = Array.from({ length: rows }, () => Array(columns).fill(null));
 let isGameOver = false;
+
+let dropSpeed = 1000; // 自然落下の初期スピード（ミリ秒単位）
+let softDropSpeed = 50; // ソフトドロップの速度
+let dropInterval = null; // 落下用タイマー
+let isSoftDropping = false; // ソフトドロップ中かどうか
 
 const characterPaths = [
   './img/yu.jpeg',
@@ -48,7 +56,7 @@ function getRandomCharacter() {
   return {
     img: characterImages[idx].img,
     id: characterImages[idx].id,
-    x: Math.floor(width / 2 / 40) * 40 + 20,
+    x: Math.floor(columns / 2), // 中央スタート
     y: 0,
   };
 }
@@ -60,178 +68,175 @@ function updateScore() {
 
 // キャラクター描画
 function drawCharacter(character) {
-  const radius = 20;
-  ctx.drawImage(character.img, character.x - radius, character.y - radius, radius * 2, radius * 2);
+  ctx.drawImage(
+    character.img,
+    character.x * tileSize,
+    character.y * tileSize,
+    tileSize,
+    tileSize
+  );
+}
+
+// グリッド全体を描画
+function drawGrid() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  grid.forEach((row, y) => {
+    row.forEach((cell, x) => {
+      if (cell) {
+        drawCharacter({ ...cell, x, y });
+      }
+    });
+  });
+
+  // 次に落ちるキャラクターの描画
+  if (nextCharacter) {
+    drawCharacter({ ...nextCharacter, y: -1 });
+  }
+
+  // 現在の落下キャラクターを描画
+  if (currentCharacter) {
+    drawCharacter(currentCharacter);
+  }
 }
 
 // 衝突判定
-function checkCollision(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  const distance = Math.sqrt(dx * dx + dy * dy);
-  return distance < 40;
+function checkCollision(x, y) {
+  return y >= rows || (y >= 0 && grid[y][x] !== null);
 }
 
-// グリッドにスナップ
-function snapToGrid(character) {
-  character.x = Math.round((character.x - 20) / 40) * 40 + 20; // x座標を40ピクセル単位にスナップ
-  character.y = Math.round(character.y / 40) * 40; // y座標を40ピクセル単位にスナップ
+// キャラクターを固定する
+function fixCharacter() {
+  grid[currentCharacter.y][currentCharacter.x] = { ...currentCharacter };
 }
 
 // 連鎖処理
 function handleChainReaction() {
-  const toRemove = new Set();
-  const grid = Array.from({ length: Math.ceil(height / 40) }, () => Array(Math.ceil(width / 40)).fill(null));
+  let matched = false;
 
-  // グリッド構造にキャラクターを登録
-  characters.forEach(c => {
-    const gridX = Math.floor((c.x - 20) / 40);
-    const gridY = Math.floor(c.y / 40);
-    grid[gridY][gridX] = c;
-  });
+  // 3つ以上の連続したキャラクターを探して削除
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < columns; x++) {
+      const cell = grid[y][x];
+      if (!cell) continue;
 
-  const directions = [
-    { dx: 1, dy: 0 },
-    { dx: 0, dy: 1 },
-    { dx: 1, dy: 1 },
-    { dx: 1, dy: -1 }
-  ];
-
-  function findMatches(x, y, dx, dy) {
-    const matches = [];
-    const startCell = grid[y]?.[x];
-    if (!startCell) return matches;
-
-    let currX = x;
-    let currY = y;
-
-    while (
-      grid[currY]?.[currX] &&
-      grid[currY][currX].id === startCell.id
-    ) {
-      matches.push(grid[currY][currX]);
-      currX += dx;
-      currY += dy;
-    }
-
-    return matches;
-  }
-
-  for (let y = 0; y < grid.length; y++) {
-    for (let x = 0; x < grid[y].length; x++) {
-      if (!grid[y][x]) continue;
+      const directions = [
+        { dx: 1, dy: 0 }, // 横
+        { dx: 0, dy: 1 }, // 縦
+      ];
 
       directions.forEach(({ dx, dy }) => {
-        const matches = findMatches(x, y, dx, dy);
+        const matches = [];
+        let nx = x;
+        let ny = y;
+
+        while (
+          nx >= 0 &&
+          ny >= 0 &&
+          nx < columns &&
+          ny < rows &&
+          grid[ny][nx] &&
+          grid[ny][nx].id === cell.id
+        ) {
+          matches.push({ x: nx, y: ny });
+          nx += dx;
+          ny += dy;
+        }
+
         if (matches.length >= 3) {
-          matches.forEach(c => toRemove.add(c));
+          matched = true;
+          matches.forEach(({ x, y }) => {
+            grid[y][x] = null;
+          });
         }
       });
     }
   }
 
-  if (toRemove.size > 0) {
-    toRemove.forEach(c => {
-      const idx = characters.indexOf(c);
-      if (idx > -1) characters.splice(idx, 1);
-    });
-
-    score += toRemove.size;
-    updateScore();
-    recalculateCharacterPositions(grid);
-    handleChainReaction();
-  }
-}
-
-// キャラクターの再配置
-function recalculateCharacterPositions(grid) {
-  for (let x = 0; x < grid[0].length; x++) {
-    const column = [];
-    for (let y = grid.length - 1; y >= 0; y--) {
-      if (grid[y][x]) {
-        column.push(grid[y][x]);
-        grid[y][x] = null;
+  // 空いたスペースに積み上げを再配置
+  if (matched) {
+    for (let x = 0; x < columns; x++) {
+      const column = grid.map(row => row[x]).filter(cell => cell !== null);
+      for (let y = rows - 1; y >= 0; y--) {
+        grid[y][x] = column.pop() || null;
       }
     }
-
-    let emptyRow = grid.length - 1;
-    column.forEach(character => {
-      character.y = emptyRow * 40;
-      character.x = x * 40 + 20;
-      grid[emptyRow][x] = character;
-      emptyRow--;
-    });
+    handleChainReaction(); // 再帰的に連鎖を処理
   }
 }
 
-// ゲームループ
-function gameLoop() {
-  if (isGameOver) return;
-
-  ctx.clearRect(0, 0, width, height);
-
-  drawCharacter({ x: width / 2, y: 30, img: nextCharacter.img });
-
-  currentCharacter.y += 2;
-  drawCharacter(currentCharacter);
-
-  if (
-    currentCharacter.y + 20 >= height ||
-    characters.some(c => checkCollision(currentCharacter, c))
-  ) {
-    snapToGrid(currentCharacter);
-    characters.push({ ...currentCharacter });
+// 自然落下処理
+function dropCharacter() {
+  if (!checkCollision(currentCharacter.x, currentCharacter.y + 1)) {
+    currentCharacter.y++;
+    drawGrid();
+  } else {
+    fixCharacter();
     handleChainReaction();
 
-    if (characters.some(c => c.y <= 20)) {
+    if (grid[0].some(cell => cell !== null)) {
       isGameOver = true;
       alert("ゲームオーバー");
       resetGame();
       return;
     }
 
-    currentCharacter = { ...nextCharacter };
+    currentCharacter = nextCharacter;
     nextCharacter = getRandomCharacter();
+    drawGrid();
   }
-
-  characters.forEach(c => drawCharacter(c));
-
-  requestAnimationFrame(gameLoop);
 }
 
-// ゲームリセット
-function resetGame() {
-  score = 0;
-  characters = [];
-  isGameOver = false;
-  updateScore();
-  startGame();
+// 自然落下の開始
+function startNaturalDrop() {
+  if (dropInterval) clearInterval(dropInterval); // 既存のタイマーをクリア
+
+  const speed = isSoftDropping ? softDropSpeed : dropSpeed;
+  dropInterval = setInterval(dropCharacter, speed); // 現在の速度で再スタート
 }
 
 // 入力処理
 document.addEventListener("keydown", e => {
-  if (e.key === "ArrowLeft" && currentCharacter.x > 20) {
-    currentCharacter.x -= 40;
-    snapToGrid(currentCharacter);
+  if (!currentCharacter) return;
+
+  if (e.key === "ArrowLeft" && !checkCollision(currentCharacter.x - 1, currentCharacter.y)) {
+    currentCharacter.x--;
+    drawGrid();
   }
-  if (e.key === "ArrowRight" && currentCharacter.x < width - 20) {
-    currentCharacter.x += 40;
-    snapToGrid(currentCharacter);
+  if (e.key === "ArrowRight" && !checkCollision(currentCharacter.x + 1, currentCharacter.y)) {
+    currentCharacter.x++;
+    drawGrid();
   }
   if (e.key === " ") {
-    currentCharacter.y += 10;
+    isSoftDropping = true;
+    startNaturalDrop(); // ソフトドロップの速度で落下
   }
 });
+
+// スペースキーを離した時の処理
+document.addEventListener("keyup", e => {
+  if (e.key === " ") {
+    isSoftDropping = false;
+    startNaturalDrop(); // 通常の自然落下速度に戻す
+  }
+});
+
+// ゲームリセット
+function resetGame() {
+  score = 0;
+  grid = Array.from({ length: rows }, () => Array(columns).fill(null));
+  isGameOver = false;
+  clearInterval(dropInterval);
+  startGame();
+}
 
 // ゲーム開始
 function startGame() {
   score = 0;
-  characters = [];
+  grid = Array.from({ length: rows }, () => Array(columns).fill(null));
   isGameOver = false;
 
   nextCharacter = getRandomCharacter();
-  currentCharacter = { ...nextCharacter };
-  nextCharacter = getRandomCharacter();
-  updateScore();
-  gameLoop();
+  currentCharacter = getRandomCharacter();
+  drawGrid();
+  startNaturalDrop(); // 自然落下を開始
 }
