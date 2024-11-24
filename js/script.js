@@ -13,7 +13,7 @@ let currentCharacter;
 let grid = Array.from({ length: rows }, () => Array(columns).fill(null));
 let isGameOver = false;
 
-let dropSpeed = 1000; // 自然落下の初期スピード（ミリ秒単位）
+let dropSpeed = 700; // 自然落下の初期スピード（ミリ秒単位）
 let softDropSpeed = 50; // ソフトドロップの速度
 let dropInterval = null; // 落下用タイマー
 let isSoftDropping = false; // ソフトドロップ中かどうか
@@ -63,7 +63,27 @@ function getRandomCharacter() {
 
 // スコア表示
 function updateScore() {
-  document.getElementById("score").innerText = `スコア: ${score}`;
+  drawGrid(); // スコア更新時にグリッド再描画
+  ctx.font = "20px Arial";
+  ctx.fillStyle = "black";
+  ctx.clearRect(canvas.width - 200, 0, 200, 40); // スコアエリアをクリア
+  ctx.fillText(`Score: ${score}`, canvas.width - 180, 30);
+}
+
+// 次のキャラクター描画
+function drawNextCharacter() {
+  ctx.clearRect(0, 0, 160, 40); // 次のキャラクター表示エリアをクリア
+  ctx.font = "20px Arial";
+  ctx.fillStyle = "black";
+  ctx.fillText("Next:", 10, 30);
+
+  if (nextCharacter) {
+    ctx.drawImage(
+      nextCharacter.img,
+      80, 10, // 描画位置
+      tileSize, tileSize
+    );
+  }
 }
 
 // キャラクター描画
@@ -79,7 +99,7 @@ function drawCharacter(character) {
 
 // グリッド全体を描画
 function drawGrid() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.clearRect(0, 40, canvas.width, canvas.height); // ゲーム領域をクリア
   grid.forEach((row, y) => {
     row.forEach((cell, x) => {
       if (cell) {
@@ -87,11 +107,6 @@ function drawGrid() {
       }
     });
   });
-
-  // 次に落ちるキャラクターの描画
-  if (nextCharacter) {
-    drawCharacter({ ...nextCharacter, y: -1 });
-  }
 
   // 現在の落下キャラクターを描画
   if (currentCharacter) {
@@ -109,11 +124,30 @@ function fixCharacter() {
   grid[currentCharacter.y][currentCharacter.x] = { ...currentCharacter };
 }
 
-// 連鎖処理
+// アニメーション付きの連鎖処理
 function handleChainReaction() {
-  let matched = false;
+  const matches = findMatches(); // マッチを取得
+  if (matches.length === 0) return;
 
-  // 3つ以上の連続したキャラクターを探して削除
+  // 一つずつ消す処理
+  let delay = 0;
+  matches.forEach((match, idx) => {
+    setTimeout(() => {
+      match.forEach(({ x, y }) => {
+        grid[y][x] = null;
+      });
+      score += match.length; // スコアを加算
+      updateScore();
+      applyGravity(); // 重力を適用
+      drawGrid();
+    }, delay);
+    delay += 300; // 次のマッチを消すまでの遅延
+  });
+}
+
+// マッチを探す
+function findMatches() {
+  const matches = [];
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < columns; x++) {
       const cell = grid[y][x];
@@ -125,7 +159,7 @@ function handleChainReaction() {
       ];
 
       directions.forEach(({ dx, dy }) => {
-        const matches = [];
+        const match = [];
         let nx = x;
         let ny = y;
 
@@ -137,30 +171,27 @@ function handleChainReaction() {
           grid[ny][nx] &&
           grid[ny][nx].id === cell.id
         ) {
-          matches.push({ x: nx, y: ny });
+          match.push({ x: nx, y: ny });
           nx += dx;
           ny += dy;
         }
 
-        if (matches.length >= 3) {
-          matched = true;
-          matches.forEach(({ x, y }) => {
-            grid[y][x] = null;
-          });
+        if (match.length >= 3) {
+          matches.push(match);
         }
       });
     }
   }
+  return matches;
+}
 
-  // 空いたスペースに積み上げを再配置
-  if (matched) {
-    for (let x = 0; x < columns; x++) {
-      const column = grid.map(row => row[x]).filter(cell => cell !== null);
-      for (let y = rows - 1; y >= 0; y--) {
-        grid[y][x] = column.pop() || null;
-      }
+// 重力の適用
+function applyGravity() {
+  for (let x = 0; x < columns; x++) {
+    const column = grid.map(row => row[x]).filter(cell => cell !== null);
+    for (let y = rows - 1; y >= 0; y--) {
+      grid[y][x] = column.pop() || null;
     }
-    handleChainReaction(); // 再帰的に連鎖を処理
   }
 }
 
@@ -182,6 +213,7 @@ function dropCharacter() {
 
     currentCharacter = nextCharacter;
     nextCharacter = getRandomCharacter();
+    drawNextCharacter();
     drawGrid();
   }
 }
@@ -189,9 +221,8 @@ function dropCharacter() {
 // 自然落下の開始
 function startNaturalDrop() {
   if (dropInterval) clearInterval(dropInterval); // 既存のタイマーをクリア
-
   const speed = isSoftDropping ? softDropSpeed : dropSpeed;
-  dropInterval = setInterval(dropCharacter, speed); // 現在の速度で再スタート
+  dropInterval = setInterval(dropCharacter, speed);
 }
 
 // 入力処理
@@ -208,15 +239,14 @@ document.addEventListener("keydown", e => {
   }
   if (e.key === " ") {
     isSoftDropping = true;
-    startNaturalDrop(); // ソフトドロップの速度で落下
+    startNaturalDrop();
   }
 });
 
-// スペースキーを離した時の処理
 document.addEventListener("keyup", e => {
   if (e.key === " ") {
     isSoftDropping = false;
-    startNaturalDrop(); // 通常の自然落下速度に戻す
+    startNaturalDrop();
   }
 });
 
@@ -237,6 +267,7 @@ function startGame() {
 
   nextCharacter = getRandomCharacter();
   currentCharacter = getRandomCharacter();
+  drawNextCharacter();
   drawGrid();
-  startNaturalDrop(); // 自然落下を開始
+  startNaturalDrop();
 }
