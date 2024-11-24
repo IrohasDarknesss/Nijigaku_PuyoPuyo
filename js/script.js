@@ -63,7 +63,6 @@ function getRandomCharacter() {
 
 // スコア表示
 function updateScore() {
-  drawGrid(); // スコア更新時にグリッド再描画
   ctx.font = "20px Arial";
   ctx.fillStyle = "black";
   ctx.clearRect(canvas.width - 200, 0, 200, 40); // スコアエリアをクリア
@@ -268,6 +267,7 @@ function startGame() {
   nextCharacter = getRandomCharacter();
   currentCharacter = getRandomCharacter();
   drawNextCharacter();
+  updateScore(); // 初期スコアを表示
   drawGrid();
   startNaturalDrop();
 }
