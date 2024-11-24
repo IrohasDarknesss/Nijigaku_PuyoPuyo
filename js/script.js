@@ -85,10 +85,10 @@ function handleChainReaction() {
   });
 
   const directions = [
-    { dx: 1, dy: 0 },
-    { dx: 0, dy: 1 },
-    { dx: 1, dy: 1 },
-    { dx: 1, dy: -1 }
+    { dx: 1, dy: 0 },  // 横方向
+    { dx: 0, dy: 1 },  // 縦方向
+    { dx: 1, dy: 1 },  // 右下斜め
+    { dx: 1, dy: -1 }  // 右上斜め
   ];
 
   function findMatches(x, y, dx, dy) {
@@ -161,19 +161,26 @@ function gameLoop() {
 
   ctx.clearRect(0, 0, width, height);
 
+  // 次に落ちるキャラクターの描画
   drawCharacter({ x: width / 2, y: 30, img: nextCharacter.img });
 
+  // 現在のキャラクターの移動と描画
   currentCharacter.y += 2;
   drawCharacter(currentCharacter);
 
+  // キャラクターが地面または他のキャラクターに衝突した場合
   if (
     currentCharacter.y + 20 >= height ||
     characters.some(c => checkCollision(currentCharacter, c))
   ) {
+    // キャラクターの最終位置を調整し、リストに追加
     currentCharacter.y = Math.min(currentCharacter.y, height - 20);
     characters.push({ ...currentCharacter });
+
+    // 連鎖処理の実行
     handleChainReaction();
 
+    // ゲームオーバー判定
     if (characters.some(c => c.y <= 20)) {
       isGameOver = true;
       alert("ゲームオーバー");
@@ -181,12 +188,15 @@ function gameLoop() {
       return;
     }
 
-    currentCharacter = getRandomCharacter();
+    // 次のキャラクターを現在のキャラクターに設定し、新しいキャラクターを生成
+    currentCharacter = { ...nextCharacter };
     nextCharacter = getRandomCharacter();
   }
 
+  // 全てのキャラクターを描画
   characters.forEach(c => drawCharacter(c));
 
+  // 次のフレームをリクエスト
   requestAnimationFrame(gameLoop);
 }
 
@@ -208,7 +218,13 @@ document.addEventListener("keydown", e => {
 
 // ゲーム開始
 function startGame() {
+  score = 0;
+  characters = [];
+  isGameOver = false;
+
   nextCharacter = getRandomCharacter();
-  currentCharacter = getRandomCharacter();
+  currentCharacter = { ...nextCharacter }; // 最初のキャラクターを設定
+  nextCharacter = getRandomCharacter();    // 次のキャラクターを生成
+  updateScore();
   gameLoop();
 }
