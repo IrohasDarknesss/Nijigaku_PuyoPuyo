@@ -123,10 +123,13 @@ function fixCharacter() {
   grid[currentCharacter.y][currentCharacter.x] = { ...currentCharacter };
 }
 
-// アニメーション付きの連鎖処理
-function handleChainReaction() {
+// 連鎖処理を再帰的に実行
+function handleChainReaction(callback) {
   const matches = findMatches(); // マッチを取得
-  if (matches.length === 0) return;
+  if (matches.length === 0) {
+    if (callback) callback(); // 連鎖終了後に次の処理を実行
+    return;
+  }
 
   // 一つずつ消す処理
   let delay = 0;
@@ -139,8 +142,13 @@ function handleChainReaction() {
       updateScore();
       applyGravity(); // 重力を適用
       drawGrid();
+
+      // 最後のマッチ処理後に再帰的に連鎖を処理
+      if (idx === matches.length - 1) {
+        setTimeout(() => handleChainReaction(callback), 300); // 次の連鎖を遅延実行
+      }
     }, delay);
-    delay += 300; // 次のマッチを消すまでの遅延
+    delay += 300; // 各マッチの消滅を遅延
   });
 }
 
@@ -201,19 +209,19 @@ function dropCharacter() {
     drawGrid();
   } else {
     fixCharacter();
-    handleChainReaction();
+    handleChainReaction(() => {
+      if (grid[0].some(cell => cell !== null)) {
+        isGameOver = true;
+        alert("ゲームオーバー");
+        resetGame();
+        return;
+      }
 
-    if (grid[0].some(cell => cell !== null)) {
-      isGameOver = true;
-      alert("ゲームオーバー");
-      resetGame();
-      return;
-    }
-
-    currentCharacter = nextCharacter;
-    nextCharacter = getRandomCharacter();
-    drawNextCharacter();
-    drawGrid();
+      currentCharacter = nextCharacter;
+      nextCharacter = getRandomCharacter();
+      drawNextCharacter();
+      drawGrid();
+    });
   }
 }
 
