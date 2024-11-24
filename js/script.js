@@ -7,7 +7,7 @@ const height = canvas.height;
 let score = 0;
 let nextCharacter;
 let currentCharacter;
-let characters = []; // 落下したキャラのリスト
+let characters = [];
 let isGameOver = false;
 
 const characterPaths = [
@@ -27,25 +27,30 @@ const characterPaths = [
 ];
 
 const characterImages = [];
-let imagesLoaded = 0; // ロード済み画像カウント
+let imagesLoaded = 0;
 
 // キャラクター画像の読み込み
-characterPaths.forEach(path => {
+characterPaths.forEach((path, idx) => {
   const img = new Image();
   img.src = path;
   img.onload = () => {
     imagesLoaded++;
     if (imagesLoaded === characterPaths.length) {
-      startGame(); // 全ての画像がロードされたらゲーム開始
+      startGame();
     }
   };
-  characterImages.push(img);
+  characterImages.push({ img, id: idx });
 });
 
 // ランダムキャラクター取得
 function getRandomCharacter() {
   const idx = Math.floor(Math.random() * characterImages.length);
-  return { img: characterImages[idx], id: idx };
+  return {
+    img: characterImages[idx].img,
+    id: characterImages[idx].id,
+    x: width / 2,
+    y: 0,
+  };
 }
 
 // スコア表示
@@ -55,7 +60,7 @@ function updateScore() {
 
 // キャラクター描画
 function drawCharacter(character) {
-  const radius = 20; // 円形の半径
+  const radius = 20;
   ctx.drawImage(character.img, character.x - radius, character.y - radius, radius * 2, radius * 2);
 }
 
@@ -64,79 +69,146 @@ function checkCollision(a, b) {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
   const distance = Math.sqrt(dx * dx + dy * dy);
-  return distance < 40; // 半径 * 2
+  return distance < 40;
 }
 
-// キャラの連鎖処理
+// 連鎖処理
 function handleChainReaction() {
-  const toRemove = [];
-  characters.forEach((c1, i) => {
-    const cluster = characters.filter(c2 => c1.id === c2.id && checkCollision(c1, c2));
-    if (cluster.length >= 3) {
-      toRemove.push(...cluster);
+  const toRemove = new Set();
+  const grid = Array.from({ length: Math.ceil(height / 40) }, () => Array(Math.ceil(width / 40)).fill(null));
+
+  // グリッド構造にキャラクターを登録
+  characters.forEach(c => {
+    const gridX = Math.floor(c.x / 40);
+    const gridY = Math.floor(c.y / 40);
+    grid[gridY][gridX] = c;
+  });
+
+  const directions = [
+    { dx: 1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 1, dy: 1 },
+    { dx: 1, dy: -1 }
+  ];
+
+  function findMatches(x, y, dx, dy) {
+    const matches = [];
+    const startCell = grid[y]?.[x];
+    if (!startCell) return matches;
+
+    let currX = x;
+    let currY = y;
+
+    while (
+      grid[currY]?.[currX] &&
+      grid[currY][currX].id === startCell.id
+    ) {
+      matches.push(grid[currY][currX]);
+      currX += dx;
+      currY += dy;
     }
-  });
 
-  toRemove.forEach(c => {
-    const idx = characters.indexOf(c);
-    if (idx > -1) characters.splice(idx, 1);
-  });
+    return matches;
+  }
 
-  score += toRemove.length;
-  updateScore();
+  for (let y = 0; y < grid.length; y++) {
+    for (let x = 0; x < grid[y].length; x++) {
+      if (!grid[y][x]) continue;
+
+      directions.forEach(({ dx, dy }) => {
+        const matches = findMatches(x, y, dx, dy);
+        if (matches.length >= 3) {
+          matches.forEach(c => toRemove.add(c));
+        }
+      });
+    }
+  }
+
+  if (toRemove.size > 0) {
+    toRemove.forEach(c => {
+      const idx = characters.indexOf(c);
+      if (idx > -1) characters.splice(idx, 1);
+    });
+
+    score += toRemove.size;
+    updateScore();
+    recalculateCharacterPositions(grid);
+    handleChainReaction(); // 再帰的に連鎖処理
+  }
+}
+
+// キャラクターの再配置
+function recalculateCharacterPositions(grid) {
+  for (let x = 0; x < grid[0].length; x++) {
+    let emptyRow = null;
+    for (let y = grid.length - 1; y >= 0; y--) {
+      if (grid[y][x] === null) {
+        emptyRow = y;
+      } else if (emptyRow !== null) {
+        const character = grid[y][x];
+        character.y += (emptyRow - y) * 40;
+        grid[emptyRow][x] = character;
+        grid[y][x] = null;
+        emptyRow--;
+      }
+    }
+  }
 }
 
 // ゲームループ
 function gameLoop() {
-    if (isGameOver) return;
-  
-    ctx.clearRect(0, 0, width, height);
-  
-    // 次に落下するキャラの表示
-    drawCharacter({ x: width / 2, y: 30, img: nextCharacter.img }); // 次のキャラは画面上部に表示
-  
-    // 現在のキャラの描画
-    currentCharacter.y += 2; // 落下速度を制御
-    drawCharacter(currentCharacter);
-  
-    // 衝突または画面下端到達判定
-    if (
-      currentCharacter.y + 20 >= height || // 画面下端
-      characters.some(c => checkCollision(currentCharacter, c)) // 他キャラクターとの衝突
-    ) {
-      // 現在のキャラクターを固定
-      currentCharacter.y = Math.min(currentCharacter.y, height - 20); // 下端の位置に調整
-      characters.push({ ...currentCharacter }); // キャラリストに追加
-      handleChainReaction(); // 連鎖処理
-  
-      // ゲームオーバー判定
-      if (currentCharacter.y <= 20) {
-        isGameOver = true;
-        alert("ゲームオーバー");
-        return;
-      }
-  
-      // 次のキャラクターを準備
-      currentCharacter = { x: width / 2, y: 0, img: nextCharacter.img };
-      nextCharacter = getRandomCharacter();
+  if (isGameOver) return;
+
+  ctx.clearRect(0, 0, width, height);
+
+  drawCharacter({ x: width / 2, y: 30, img: nextCharacter.img });
+
+  currentCharacter.y += 2;
+  drawCharacter(currentCharacter);
+
+  if (
+    currentCharacter.y + 20 >= height ||
+    characters.some(c => checkCollision(currentCharacter, c))
+  ) {
+    currentCharacter.y = Math.min(currentCharacter.y, height - 20);
+    characters.push({ ...currentCharacter });
+    handleChainReaction();
+
+    if (characters.some(c => c.y <= 20)) {
+      isGameOver = true;
+      alert("ゲームオーバー");
+      resetGame();
+      return;
     }
-  
-    // 落下したキャラクターの描画
-    characters.forEach(c => drawCharacter(c));
-  
-    requestAnimationFrame(gameLoop);
+
+    currentCharacter = getRandomCharacter();
+    nextCharacter = getRandomCharacter();
   }
+
+  characters.forEach(c => drawCharacter(c));
+
+  requestAnimationFrame(gameLoop);
+}
+
+// ゲームリセット
+function resetGame() {
+  score = 0;
+  characters = [];
+  isGameOver = false;
+  updateScore();
+  startGame();
+}
 
 // 入力処理
 document.addEventListener("keydown", e => {
   if (e.key === "ArrowLeft" && currentCharacter.x > 20) currentCharacter.x -= 20;
   if (e.key === "ArrowRight" && currentCharacter.x < width - 20) currentCharacter.x += 20;
-  if (e.key === " ") currentCharacter.y += 10; // 強制落下
+  if (e.key === " ") currentCharacter.y += 10;
 });
 
-// ゲーム開始関数
+// ゲーム開始
 function startGame() {
   nextCharacter = getRandomCharacter();
-  currentCharacter = { x: width / 2, y: 0, img: nextCharacter.img };
+  currentCharacter = getRandomCharacter();
   gameLoop();
 }
